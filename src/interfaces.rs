@@ -1,6 +1,7 @@
 use crate::compute::ComputeError;
 use crate::configurations::ComputeNodeSharedConfig;
 use crate::raft::{CommittedIndex, RaftMessageWrapper};
+use crate::storage::StorageError;
 use crate::tracked_utxo::TrackedUtxoSet;
 use crate::unicorn::Unicorn;
 use crate::utils::rug_integer;
@@ -343,6 +344,8 @@ pub enum StorageRequest {
     Store { incoming_contract: Contract },
     Closing,
     SendRaftCmd(RaftMessageWrapper),
+    // =============== ARMAGEDDON PROTOCOL ===============
+    BeginArmageddon(u64, SocketAddr),
 }
 
 impl fmt::Debug for StorageRequest {
@@ -359,6 +362,7 @@ impl fmt::Debug for StorageRequest {
             Store { .. } => write!(f, "Store"),
             Closing => write!(f, "Closing"),
             SendRaftCmd(_) => write!(f, "SendRaftCmd"),
+            BeginArmageddon(..) => write!(f, "BeginArmageddon"),
         }
     }
 }
@@ -418,6 +422,14 @@ pub trait StorageInterface {
     ///
     /// * `contract`    - Contract to store
     fn receive_contracts(&self, contract: Contract) -> Response;
+}
+
+pub trait StorageApi {
+    fn initiate_armageddon_protocol(
+        &mut self,
+        b_num: u64,
+        compute_addr: SocketAddr,
+    ) -> Result<(), StorageError>;
 }
 
 ///============ MINER NODE ============///

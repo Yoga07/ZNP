@@ -27,6 +27,13 @@ pub const DB_SPEC: SimpleDbSpec = SimpleDbSpec {
 #[allow(clippy::large_enum_variant)]
 pub enum StorageRaftItem {
     PartBlock(ReceivedBlock),
+    Armageddon(ArmageddonProtocolMessages),
+}
+
+/// Special messages for Armageddon Protocol
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ArmageddonProtocolMessages {
+    Begin(u64, SocketAddr),
 }
 
 /// Commited item to process.
@@ -92,6 +99,8 @@ pub struct StorageRaft {
     consensused: StorageConsensused,
     /// Whether consensused received initial snapshot
     consensused_snapshot_applied: bool,
+    /// Boolean representing Armageddon Protocol status
+    armageddon_underway: bool,
     /// Proposed items in flight.
     proposed_in_flight: RaftInFlightProposals,
     /// No longer process commits after shutdown reached
@@ -138,6 +147,7 @@ impl StorageRaft {
             raft_active,
             consensused,
             consensused_snapshot_applied: !use_raft,
+            armageddon_underway: false,
             proposed_in_flight: Default::default(),
             shutdown_no_commit_process: false,
             backup_check,
@@ -248,10 +258,14 @@ impl StorageRaft {
             StorageRaftItem::PartBlock(block) => {
                 let b_num = block.common.block.header.b_num;
                 if self.consensused.is_current_block(b_num) {
-                    debug!("PartBlock appened ({},{:?})", b_num, key);
+                    debug!("PartBlock append ({},{:?})", b_num, key);
                     self.consensused.append_received_block(key, block);
                 }
             }
+            StorageRaftItem::Armageddon(ArmageddonProtocolMessages::Begin(
+                _b_num,
+                _compute_addr,
+            )) => {}
         }
 
         if self.consensused.has_block_ready_to_store() {
@@ -300,6 +314,16 @@ impl StorageRaft {
         self.propose_item_dedup(&item, b_num).await.is_some()
     }
 
+    pub async fn propose_initiate_armageddon_protocol(
+        &mut self,
+        b_num: u64,
+        compute_addr: SocketAddr,
+    ) -> bool {
+        let item =
+            StorageRaftItem::Armageddon(ArmageddonProtocolMessages::Begin(b_num, compute_addr));
+
+        self.propose_item_dedup(&item, b_num).await.is_some()
+    }
     /// Re-propose uncommited items relevant for current block.
     pub async fn re_propose_uncommitted_current_b_num(&mut self) {
         self.proposed_in_flight

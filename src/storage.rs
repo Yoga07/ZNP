@@ -7,7 +7,7 @@ use crate::constants::{
 use crate::db_utils::{self, SimpleDb, SimpleDbError, SimpleDbSpec, SimpleDbWriteBatch};
 use crate::interfaces::{
     BlockStoredInfo, BlockchainItem, BlockchainItemMeta, ComputeRequest, Contract, MineRequest,
-    MinedBlock, NodeType, ProofOfWork, Response, StorageInterface, StorageRequest,
+    MinedBlock, NodeType, ProofOfWork, Response, StorageApi, StorageInterface, StorageRequest,
     StoredSerializingBlock,
 };
 use crate::raft::RaftCommit;
@@ -223,7 +223,7 @@ impl StorageNode {
         (self.db.clone(), api_addr, api_tls, api_keys, api_pow_info)
     }
 
-    ///Adds a uses data as the payload to create a frame, from the peer address, in the node object of this class.
+    /// Adds a user data as the payload to create a frame, from the peer address, in the node object of this class.
     ///
     /// ### Arguments
     ///
@@ -605,6 +605,20 @@ impl StorageNode {
             Closing => self.receive_closing(peer),
             SendRaftCmd(msg) => {
                 self.node_raft.received_message(msg).await;
+                None
+            }
+            BeginArmageddon(b_num, compute_addr) => {
+                if self
+                    .node_raft
+                    .propose_initiate_armageddon_protocol(b_num, compute_addr)
+                    .await
+                {
+                    info!(
+                        "Proposed Armageddon Protocol at b_num {b_num} to Compute {compute_addr:?}"
+                    );
+                } else {
+                    warn!("Failed to propose Armageddon Protocol; It might already be underway")
+                }
                 None
             }
         }
@@ -1094,6 +1108,15 @@ impl StorageInterface for StorageNode {
             success: false,
             reason: "Not implemented yet",
         }
+    }
+}
+
+impl StorageApi for StorageNode {
+    fn initiate_armageddon_protocol(&mut self, b_num: u64, compute_addr: SocketAddr) -> Result<()> {
+        self.inject_next_event(
+            self.local_address(),
+            StorageRequest::BeginArmageddon(b_num, compute_addr),
+        )
     }
 }
 

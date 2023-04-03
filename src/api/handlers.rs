@@ -11,8 +11,8 @@ use crate::constants::LAST_BLOCK_HASH_KEY;
 use crate::db_utils::SimpleDb;
 use crate::interfaces::{
     node_type_as_str, AddressesWithOutPoints, BlockchainItem, BlockchainItemMeta,
-    BlockchainItemType, ComputeApi, DebugData, DruidPool, OutPointData, StoredSerializingBlock,
-    UserApiRequest, UserRequest, UtxoFetchType,
+    BlockchainItemType, ComputeApi, DebugData, DruidPool, OutPointData, StorageApi,
+    StoredSerializingBlock, UserApiRequest, UserRequest, UtxoFetchType,
 };
 use crate::miner::{BlockPoWReceived, CurrentBlockWithMutex};
 use crate::storage::{get_stored_value_from_db, indexed_block_hash_key};
@@ -394,6 +394,29 @@ pub async fn post_block_by_num(
         .map(|num| indexed_block_hash_key(*num))
         .collect();
     get_json_reply_items_from_db(db, keys, route, call_id)
+}
+
+/// Post to retrieve block information by number
+pub async fn post_initiate_armageddon_protocol(
+    mut threaded_calls: ThreadedCallSender<dyn StorageApi>,
+    block_num: u64,
+    compute_ip: SocketAddr,
+    route: &'static str,
+    call_id: String,
+) -> Result<JsonReply, JsonReply> {
+    let r = CallResponse::new(route, &call_id);
+    let _ = make_api_threaded_call(
+        &mut threaded_calls,
+        move |c| c.initiate_armageddon_protocol(block_num, compute_ip),
+        "Cannot initiate Armageddon Protocol proposal",
+    )
+    .await
+    .map_err(|e| map_string_err(r.clone(), e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    r.into_ok(
+        "Initiated Armageddon Protocol",
+        json_serialize_embed("null"),
+    )
 }
 
 /// Post to import new keypairs to the connected wallet
