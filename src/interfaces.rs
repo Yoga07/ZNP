@@ -418,6 +418,11 @@ pub trait StorageInterface {
     fn receive_contracts(&self, contract: Contract) -> Response;
 }
 
+pub trait StorageApi {
+    fn initiate_armageddon_protocol(&self, b_num: u64, compute_addr: SocketAddr);
+
+}
+
 ///============ MINER NODE ============///
 
 /// Encapsulates miner requests

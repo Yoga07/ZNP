@@ -317,6 +317,31 @@ pub fn block_by_num(
 }
 
 // POST get block information by number
+pub fn initiate_armageddon_protocol(
+    dp: &mut DbgPaths,
+    db: Arc<Mutex<SimpleDb>>,
+    routes_pow: RoutesPoWInfo,
+    api_keys: ApiKeys,
+    cache: ReplyCache,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    let route = "initiate_armageddon_protocol";
+    warp_path(dp, route)
+        .and(warp::post())
+        .and(auth_request(routes_pow, api_keys))
+        .and(with_node_component(db))
+        .and(warp::body::json())
+        .and(with_node_component(cache))
+        .and_then(move |call_id: String, db, info, cache| {
+            map_api_res_and_cache(
+                call_id.clone(),
+                cache,
+                handlers::post_block_by_num(db, info, route, call_id),
+            )
+        })
+        .with(post_cors())
+}
+
+// POST get block information by number
 pub fn transactions_by_key(
     dp: &mut DbgPaths,
     db: Arc<Mutex<SimpleDb>>,
@@ -898,6 +923,14 @@ pub fn storage_node_routes(
         routes_pow_info.clone(),
         api_keys.clone(),
         cache.clone(),
+    ))
+    .or(initiate_armageddon_protocol(
+        dp_vec,
+        node,
+        None,
+        routes_pow_info,
+        api_keys,
+        cache,
     ))
     .or(debug_data(
         dp_vec,

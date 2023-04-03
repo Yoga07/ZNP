@@ -9,17 +9,13 @@ use crate::compute::ComputeError;
 use crate::configurations::ComputeNodeSharedConfig;
 use crate::constants::LAST_BLOCK_HASH_KEY;
 use crate::db_utils::SimpleDb;
-use crate::interfaces::{
-    node_type_as_str, AddressesWithOutPoints, BlockchainItem, BlockchainItemMeta,
-    BlockchainItemType, ComputeApi, DebugData, DruidPool, OutPointData, StoredSerializingBlock,
-    UserApiRequest, UserRequest, UtxoFetchType,
-};
+use crate::interfaces::{node_type_as_str, AddressesWithOutPoints, BlockchainItem, BlockchainItemMeta, BlockchainItemType, ComputeApi, DebugData, DruidPool, OutPointData, StoredSerializingBlock, UserApiRequest, UserRequest, UtxoFetchType, StorageApi};
 use crate::miner::{BlockPoWReceived, CurrentBlockWithMutex};
 use crate::storage::{get_stored_value_from_db, indexed_block_hash_key};
 use crate::threaded_call::{self, ThreadedCallSender};
 use crate::utils::{decode_pub_key, decode_signature, StringError};
 use crate::wallet::{WalletDb, WalletDbError};
-use crate::Response;
+use crate::{Response, StorageInterface};
 use naom::constants::D_DISPLAY_PLACES;
 use naom::crypto::sign_ed25519::PublicKey;
 use naom::primitives::asset::{Asset, ReceiptAsset, TokenAmount};
@@ -394,6 +390,33 @@ pub async fn post_block_by_num(
         .map(|num| indexed_block_hash_key(*num))
         .collect();
     get_json_reply_items_from_db(db, keys, route, call_id)
+}
+
+/// Post to retrieve block information by number
+pub async fn post_initiate_armageddon_protocol(
+    mut threaded_calls: ThreadedCallSender<dyn StorageApi>,
+    db: Arc<Mutex<SimpleDb>>,
+    block_num: u64,
+    compute_id: SocketAddr,
+    route: &'static str,
+    call_id: String,
+) -> Result<JsonReply, JsonReply> {
+    // let keys: Vec<_> = block_nums
+    //     .iter()
+    //     .map(|num| indexed_block_hash_key(*num))
+    //     .collect();
+    // get_json_reply_items_from_db(db, keys, route, call_id)
+    let balances = make_api_threaded_call(
+        &mut threaded_calls,
+        move |c| {
+            c.initiate_armageddon_protocol()
+        },
+        "Cannot fetch UTXO balance",
+    )
+        .await
+        .map_err(|e| map_string_err(r.clone(), e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    r.into_ok("Initiated Aramageddon Protocol", json_serialize_embed("null"))
 }
 
 /// Post to import new keypairs to the connected wallet

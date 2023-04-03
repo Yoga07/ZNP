@@ -5,11 +5,7 @@ use crate::constants::{
     NAMED_CONSTANT_PREPEND, PEER_LIMIT,
 };
 use crate::db_utils::{self, SimpleDb, SimpleDbError, SimpleDbSpec, SimpleDbWriteBatch};
-use crate::interfaces::{
-    BlockStoredInfo, BlockchainItem, BlockchainItemMeta, ComputeRequest, Contract, MineRequest,
-    MinedBlock, NodeType, ProofOfWork, Response, StorageInterface, StorageRequest,
-    StoredSerializingBlock,
-};
+use crate::interfaces::{BlockStoredInfo, BlockchainItem, BlockchainItemMeta, ComputeRequest, Contract, MineRequest, MinedBlock, NodeType, ProofOfWork, Response, StorageInterface, StorageRequest, StoredSerializingBlock, StorageApi};
 use crate::raft::RaftCommit;
 use crate::storage_fetch::{FetchStatus, FetchedBlockChain, StorageFetch};
 use crate::storage_raft::{CommittedItem, CompleteBlock, StorageRaft};
@@ -1089,6 +1085,13 @@ impl StorageInterface for StorageNode {
             success: false,
             reason: "Not implemented yet",
         }
+    }
+}
+
+impl StorageApi for StorageNode {
+    fn initiate_armageddon_protocol(&self, b_num: u64, compute_addr: SocketAddr) {
+        self.node_raft.
+
     }
 }
 

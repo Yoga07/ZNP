@@ -27,6 +27,11 @@ pub const DB_SPEC: SimpleDbSpec = SimpleDbSpec {
 #[allow(clippy::large_enum_variant)]
 pub enum StorageRaftItem {
     PartBlock(ReceivedBlock),
+    Armageddon(ArmageddonProtocolMessages),
+}
+
+pub enum ArmageddonProtocolMessages {
+    Begin(u64, SocketAddr),
 }
 
 /// Commited item to process.
@@ -92,6 +97,7 @@ pub struct StorageRaft {
     consensused: StorageConsensused,
     /// Whether consensused received initial snapshot
     consensused_snapshot_applied: bool,
+    armageddong_underway: bool,
     /// Proposed items in flight.
     proposed_in_flight: RaftInFlightProposals,
     /// No longer process commits after shutdown reached
@@ -146,6 +152,7 @@ impl StorageRaft {
 
     /// Set the key run for all proposals (load from db before first proposal).
     pub fn set_key_run(&mut self, key_run: u64) {
+
         self.proposed_in_flight.set_key_run(key_run)
     }
 
@@ -252,6 +259,9 @@ impl StorageRaft {
                     self.consensused.append_received_block(key, block);
                 }
             }
+            StorageRaftItem::Armageddon(ArmageddonProtocolMessages::Begin(b_num, compute_addr)) => {
+                self.shutdown_no_commit_process
+            }
         }
 
         if self.consensused.has_block_ready_to_store() {
@@ -300,6 +310,16 @@ impl StorageRaft {
         self.propose_item_dedup(&item, b_num).await.is_some()
     }
 
+
+    pub async fn propose_initiate_armageddon_protocol(
+        &mut self,
+        b_num: u64,
+        compute_addr: SocketAddr,
+    ) -> bool {
+        let item = StorageRaftItem::Armageddon(ArmageddonProtocolMessages::Begin(b_num, compute_addr));
+
+        self.propose_item_dedup(&item, b_num).await.is_some()
+    }
     /// Re-propose uncommited items relevant for current block.
     pub async fn re_propose_uncommitted_current_b_num(&mut self) {
         self.proposed_in_flight
