@@ -1,3 +1,4 @@
+use std::collections::btree_map::BTreeMap;
 use crate::active_raft::ActiveRaft;
 use crate::configurations::StorageNodeConfig;
 use crate::constants::DB_PATH;
@@ -41,6 +42,7 @@ pub enum ArmageddonProtocolMessages {
 pub enum CommittedItem {
     Block,
     Snapshot,
+    InitiateArmageddon(u64, SocketAddr),
 }
 
 /// Mined block received.
@@ -263,9 +265,11 @@ impl StorageRaft {
                 }
             }
             StorageRaftItem::Armageddon(ArmageddonProtocolMessages::Begin(
-                _b_num,
-                _compute_addr,
-            )) => {}
+                b_num,
+                compute_addr,
+            )) => {
+                return Some(CommittedItem::InitiateArmageddon(b_num, compute_addr))
+            }
         }
 
         if self.consensused.has_block_ready_to_store() {
@@ -461,7 +465,7 @@ impl StorageConsensused {
         completed_blocks_len >= self.sufficient_majority
     }
 
-    ///Appends a RecievedBlock into the current_block_completed_parts
+    /// Appends a RecievedBlock into the current_block_completed_parts
     ///
     /// ### Arguments
     ///

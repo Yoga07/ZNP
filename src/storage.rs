@@ -5,11 +5,7 @@ use crate::constants::{
     NAMED_CONSTANT_PREPEND, PEER_LIMIT,
 };
 use crate::db_utils::{self, SimpleDb, SimpleDbError, SimpleDbSpec, SimpleDbWriteBatch};
-use crate::interfaces::{
-    BlockStoredInfo, BlockchainItem, BlockchainItemMeta, ComputeRequest, Contract, MineRequest,
-    MinedBlock, NodeType, ProofOfWork, Response, StorageApi, StorageInterface, StorageRequest,
-    StoredSerializingBlock,
-};
+use crate::interfaces::{BlockStoredInfo, BlockchainItem, BlockchainItemMeta, ComputeRequest, Contract, MineRequest, MinedBlock, NodeType, ProofOfWork, Response, StorageApi, StorageInterface, StorageRequest, StoredSerializingBlock, UtxoSet};
 use crate::raft::RaftCommit;
 use crate::storage_fetch::{FetchStatus, FetchedBlockChain, StorageFetch};
 use crate::storage_raft::{CommittedItem, CompleteBlock, StorageRaft};
@@ -540,6 +536,13 @@ impl StorageNode {
                     reason: "Snapshot applied",
                 }))
             }
+            Some(CommittedItem::InitiateArmageddon(b_num, compute_addr)) => {
+                // TODO: Extract UTXO
+                Some(Ok(Response {
+                    success: true,
+                    reason: "Initiated Armageddon Protocol",
+                }))
+            }
             None => None,
         }
     }
@@ -824,6 +827,16 @@ impl StorageNode {
         self_db.write(batch).unwrap();
         Ok(status)
     }
+
+    /// Rebuild UTXOSet from the chain
+    fn build_utxo(self) -> Result<UtxoSet> {
+
+        let db = self.db.lock().unwrap();
+        for x in db.iter_cf_clone() {
+
+        }
+    }
+
 
     /// Sends a request to retrieve a blockchain item from storage
     pub async fn catchup_fetch_blockchain_item(&mut self) -> Result<()> {

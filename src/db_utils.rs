@@ -443,7 +443,7 @@ impl SimpleDb {
     }
 }
 
-/// Database Atomic update accross column with performance benefit.
+/// Database Atomic update across column with performance benefit.
 pub enum SimpleDbWriteBatchDone {
     File { write: WriteBatch },
     InMemory { write: InMemoryWriteBatch },
