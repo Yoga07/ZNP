@@ -14,7 +14,7 @@ use crate::interfaces::{
     BlockchainItemMeta, ComputeApi, ComputeApiRequest, DruidDroplet, DruidPool, NodeType, Response,
     StoredSerializingBlock, UserApiRequest, UserRequest, UtxoFetchType,
 };
-use crate::storage::{put_named_last_block_to_block_chain, put_to_block_chain, DB_SPEC};
+use crate::storage::{put_named_last_block_to_block_chain, put_to_block_chain, DB_SPEC, DB_COL_BC_NOW};
 use crate::test_utils::{generate_rb_transactions, RbReceiverData, RbSenderData};
 use crate::threaded_call::ThreadedCallChannel;
 use crate::tracked_utxo::TrackedUtxoSet;

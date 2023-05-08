@@ -10,7 +10,6 @@ use crate::utils::BackupCheck;
 use bincode::{deserialize, serialize};
 use naom::crypto::sha3_256;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;

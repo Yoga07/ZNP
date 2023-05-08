@@ -1,28 +1,24 @@
 use crate::comms_handler::{CommsError, Event, Node, TcpTlsConfig};
 use crate::configurations::{ExtraNodeParams, StorageNodeConfig, TlsPrivateInfo};
-use crate::constants::{
-    DB_PATH, INDEXED_BLOCK_HASH_PREFIX_KEY, INDEXED_TX_HASH_PREFIX_KEY, LAST_BLOCK_HASH_KEY,
-    NAMED_CONSTANT_PREPEND, PEER_LIMIT,
-};
+use crate::constants::{BLOCK_PREPEND, DB_PATH, INDEXED_BLOCK_HASH_PREFIX_KEY, INDEXED_TX_HASH_PREFIX_KEY, LAST_BLOCK_HASH_KEY, NAMED_CONSTANT_PREPEND, PEER_LIMIT};
 use crate::db_utils::{self, SimpleDb, SimpleDbError, SimpleDbSpec, SimpleDbWriteBatch};
-use crate::interfaces::{BlockStoredInfo, BlockchainItem, BlockchainItemMeta, ComputeRequest, Contract, MineRequest, MinedBlock, NodeType, ProofOfWork, Response, StorageApi, StorageInterface, StorageRequest, StoredSerializingBlock, UtxoSet};
+use crate::interfaces::{BlockStoredInfo, BlockchainItem, BlockchainItemMeta, ComputeRequest, Contract, MineRequest, MinedBlock, NodeType, ProofOfWork, Response, StorageApi, StorageInterface, StorageRequest, StoredSerializingBlock};
 use crate::raft::RaftCommit;
 use crate::storage_fetch::{FetchStatus, FetchedBlockChain, StorageFetch};
 use crate::storage_raft::{CommittedItem, CompleteBlock, StorageRaft};
-use crate::utils::{
-    construct_valid_block_pow_hash, get_genesis_tx_in_display, to_api_keys, to_route_pow_infos,
-    ApiKeys, LocalEvent, LocalEventChannel, LocalEventSender, ResponseResult, RoutesPoWInfo,
-};
+use crate::utils::{construct_valid_block_pow_hash, get_genesis_tx_in_display, to_api_keys, to_route_pow_infos, ApiKeys, LocalEvent, LocalEventChannel, LocalEventSender, ResponseResult, RoutesPoWInfo};
 use bincode::{deserialize, serialize};
 use bytes::Bytes;
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
+use std::collections::vec_deque::VecDeque;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::str;
 use std::sync::{Arc, Mutex};
+use naom::primitives::block::Block;
 use tracing::{debug, error, error_span, info, trace, warn};
 use tracing_futures::Instrument;
 
@@ -132,6 +128,7 @@ pub struct StorageNode {
     whitelisted: HashMap<SocketAddr, bool>,
     shutdown_group: BTreeSet<SocketAddr>,
     blockchain_item_fetched: Option<(String, BlockchainItem, SocketAddr)>,
+    armageddon_temp_list: Option<VecDeque<Block>>,
 }
 
 impl StorageNode {
@@ -191,6 +188,7 @@ impl StorageNode {
             whitelisted: Default::default(),
             shutdown_group,
             blockchain_item_fetched: Default::default(),
+            armageddon_temp_list: Some(VecDeque::new()),
         }
         .load_local_db()
     }
@@ -538,6 +536,7 @@ impl StorageNode {
             }
             Some(CommittedItem::InitiateArmageddon(b_num, compute_addr)) => {
                 // TODO: Extract UTXO
+                self.armageddon_temp_list = Some(Vec::new());
                 Some(Ok(Response {
                     success: true,
                     reason: "Initiated Armageddon Protocol",
@@ -745,6 +744,11 @@ impl StorageNode {
         let batch = batch.done();
         self_db.write(batch).unwrap();
 
+        // let value = self_db.get_cf(DB_COL_BC_NOW, block_hash).unwrap().unwrap();
+        // let deser: StoredSerializingBlock = bincode::deserialize(&value).unwrap();
+        // info!("Left: {stored_block:?}");
+        // info!("Right: {deser:?}");
+
         //
         // Celebrate genesis block:
         //
@@ -829,14 +833,50 @@ impl StorageNode {
     }
 
     /// Rebuild UTXOSet from the chain
-    fn build_utxo(self) -> Result<UtxoSet> {
-
+    pub fn build_utxo(&mut self) -> Result<()> {
+        info!("Reading From DB");
         let db = self.db.lock().unwrap();
-        for x in db.iter_cf_clone() {
+        for (key, value) in db.iter_cf_clone(DB_COL_BC_NOW) {
+            info!("Found key!");
+            if Self::is_block_key(&key) {
+                info!("Found key for a block!");
+                info!("Found {key:?} at {value:?}");
 
+                let hash = String::from_utf8(key.clone()).unwrap();
+                let stored_block: StoredSerializingBlock = Self::deserialize_key_andblock(&value);
+                let b_num = stored_block.block.header.b_num.clone();
+                let prev_hash = stored_block.block.header.previous_hash.clone();
+
+                info!("Deserialized Key {hash:?}");
+                info!("Retreived Block deets - B_num:{b_num:?}; Hash:{key:?}; Prev hash:{prev_hash:?}");
+
+                if let Some(vec) = self.armageddon_temp_list.as_mut() {
+                    vec.
+                    (b_num as usize, stored_block.block.clone())
+                }
+            }
         }
+
+        if let Some(blockchain) = &self.armageddon_temp_list {
+            for block in blockchain {
+                info!("{block:?} \n");
+            }
+        }
+
+        Ok(())
     }
 
+    pub fn deserialize_key_andblock<'a, T: serde::Deserialize<'a>>(
+        value: &'a [u8],
+    ) -> T {
+        bincode::deserialize(value).unwrap()
+    }
+
+    /// whether it is a block key
+    pub fn is_block_key(key: &[u8]) -> bool {
+        // 0.2.0 was 64, 0.3.0 is 65 with block prepend char
+        key.len() == 64 || (key.len() == 65 && key[0] == BLOCK_PREPEND)
+    }
 
     /// Sends a request to retrieve a blockchain item from storage
     pub async fn catchup_fetch_blockchain_item(&mut self) -> Result<()> {
@@ -962,6 +1002,10 @@ impl StorageNode {
                 success: false,
                 reason: "Block received not added. PoW invalid",
             });
+        }
+
+        if common.block.header.b_num % 10 == 0 {
+            self.build_utxo().unwrap();
         }
 
         if !self
@@ -1179,6 +1223,8 @@ pub fn put_to_block_chain_at<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         BlockchainItemMeta::Tx { block_num, tx_num } => indexed_tx_hash_key(block_num, tx_num),
     };
     let meta_ser = serialize(item_meta).unwrap();
+
+    info!("Writing {key:?}to{value:?}");
 
     batch.put_cf(cf, key, value);
     batch.put_cf(DB_COL_BC_JSON, key, value_json);
