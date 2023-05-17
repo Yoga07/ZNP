@@ -11,7 +11,6 @@ use bincode::{deserialize, serialize};
 use bytes::Bytes;
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
-use std::collections::vec_deque::VecDeque;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
@@ -21,6 +20,7 @@ use std::sync::{Arc, Mutex};
 use naom::primitives::block::Block;
 use tracing::{debug, error, error_span, info, trace, warn};
 use tracing_futures::Instrument;
+use crate::chain_builder::IndexedList;
 
 /// Key storing current proposer run
 pub const RAFT_KEY_RUN: &str = "RaftKeyRun";
@@ -128,7 +128,7 @@ pub struct StorageNode {
     whitelisted: HashMap<SocketAddr, bool>,
     shutdown_group: BTreeSet<SocketAddr>,
     blockchain_item_fetched: Option<(String, BlockchainItem, SocketAddr)>,
-    armageddon_temp_list: Option<VecDeque<Block>>,
+    armageddon_temp_list: Option<IndexedList<Block>>,
 }
 
 impl StorageNode {
@@ -188,7 +188,7 @@ impl StorageNode {
             whitelisted: Default::default(),
             shutdown_group,
             blockchain_item_fetched: Default::default(),
-            armageddon_temp_list: Some(VecDeque::new()),
+            armageddon_temp_list: None,
         }
         .load_local_db()
     }
@@ -536,7 +536,7 @@ impl StorageNode {
             }
             Some(CommittedItem::InitiateArmageddon(b_num, compute_addr)) => {
                 // TODO: Extract UTXO
-                self.armageddon_temp_list = Some(Vec::new());
+                self.armageddon_temp_list = Some(IndexedList::new());
                 Some(Ok(Response {
                     success: true,
                     reason: "Initiated Armageddon Protocol",
@@ -850,15 +850,15 @@ impl StorageNode {
                 info!("Deserialized Key {hash:?}");
                 info!("Retreived Block deets - B_num:{b_num:?}; Hash:{key:?}; Prev hash:{prev_hash:?}");
 
-                if let Some(vec) = self.armageddon_temp_list.as_mut() {
-                    vec.
-                    (b_num as usize, stored_block.block.clone())
+                if let Some(list) = self.armageddon_temp_list.as_mut() {
+                    list.insert_at(b_num as usize, stored_block.block)
                 }
             }
         }
 
-        if let Some(blockchain) = &self.armageddon_temp_list {
-            for block in blockchain {
+        if let Some(blockchain) = self.armageddon_temp_list.clone() {
+            let mut iter = blockchain.into_iter();
+            for block in iter.next() {
                 info!("{block:?} \n");
             }
         }

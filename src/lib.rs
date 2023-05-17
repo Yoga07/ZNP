@@ -11,6 +11,7 @@ mod compute;
 mod compute_raft;
 pub mod configurations;
 mod constants;
+mod chain_builder;
 pub mod db_utils;
 pub mod interfaces;
 pub mod key_creation;
